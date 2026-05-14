@@ -48,6 +48,33 @@ const App: React.FC = () => {
     checkKey();
   }, []);
 
+  const speakText = (text: string) => {
+    if (!window.speechSynthesis) return;
+    
+    // Stop any current speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // ─── ANNIYAN VOICE SETTINGS ─────────────────────────────────────────────
+    utterance.pitch = 0.1;  // Ultra Deep
+    utterance.rate = 0.85;  // Slightly Slow & Powerful
+    utterance.volume = 1.0;
+    
+    // Try to find a deep male voice
+    const voices = window.speechSynthesis.getVoices();
+    const deepVoice = voices.find(v => v.name.includes('Google UK English Male') || v.name.includes('Male')) || voices[0];
+    if (deepVoice) utterance.voice = deepVoice;
+
+    // Add visual feedback (Shake Effect)
+    document.body.style.animation = 'shake 0.5s infinite';
+    utterance.onend = () => {
+      document.body.style.animation = '';
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
   const handleOpenKeySelector = async () => {
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
       await window.aistudio.openSelectKey();
