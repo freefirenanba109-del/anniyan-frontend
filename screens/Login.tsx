@@ -6,7 +6,7 @@ interface LoginProps {
   onLogin: (userData: any) => void;
 }
 
-// ─── Inline API helpers (no separate module needed) ──────────────────────────
+// ─── Inline API helpers ──────────────────────────────────────────────────────
 async function apiPost(path: string, body: object) {
   const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
   const res = await fetch(`${API_BASE}/api${path}`, {
@@ -20,233 +20,214 @@ async function apiPost(path: string, body: object) {
 }
 
 const Login: React.FC<LoginProps> = ({ theme, onLogin }) => {
-  const [isSignIn, setIsSignIn] = useState(true);
-  const [step, setStep] = useState<'contact' | 'verify' | 'name'>('contact');
+  const [view, setView] = useState<'login' | 'signup_start' | 'signup_verify' | 'signup_finish'>('login');
+  
+  // Login States
+  const [loginId, setLoginId] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Signup States
   const [contact, setContact] = useState('');
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
+  const [otp, setOtp] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const isDark = theme === 'dark';
 
-  // ─── Step 1: Send OTP ───────────────────────────────────────────────────────
-  const handleContactSubmit = async (e: React.FormEvent) => {
+  // ─── LOGIN HANDLER ─────────────────────────────────────────────────────────
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contact.trim()) return;
     setLoading(true);
     setError('');
-
     try {
-      await apiPost('/auth/send-code', { contact: contact.trim(), mode: isSignIn ? 'signin' : 'signup' });
-      setStep('verify');
+      const result = await apiPost('/auth/login', { loginId, password });
+      localStorage.setItem('anniyan_user', JSON.stringify(result.user));
+      onLogin(result.user);
     } catch (err: any) {
-      // Fallback: local-only logic if backend is down
-      try {
-        const existingUsers = JSON.parse(localStorage.getItem('anniyan_all_users') || '[]');
-        const userExists = existingUsers.find((u: any) => u.contact === contact.trim());
-        if (isSignIn && !userExists) {
-          setError('User not found. Please Sign Up.');
-        } else if (!isSignIn && userExists) {
-          setError('User already exists. Please Sign In.');
-        } else {
-          setStep('verify');
-        }
-      } catch {
-        setStep('verify');
-      }
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Step 2: Verify OTP ─────────────────────────────────────────────────────
-  const handleVerifySubmit = async (e: React.FormEvent) => {
+  // ─── SIGNUP STEP 1: Send OTP ───────────────────────────────────────────────
+  const handleSignupStart = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
-      const result = await apiPost('/auth/verify-code', {
-        contact: contact.trim(),
-        code,
-        mode: isSignIn ? 'signin' : 'signup',
-        ...(isSignIn ? {} : { name: name.trim() || undefined })
-      });
-
-      if (isSignIn) {
-        localStorage.setItem('anniyan_user', JSON.stringify(result.user));
-        onLogin(result.user);
-      } else {
-        setStep('name');
-      }
+      await apiPost('/auth/register-start', { contact });
+      setView('signup_verify');
     } catch (err: any) {
-      // Fallback: local OTP check
-      if (code !== '1234') {
-        setError('Invalid code. Use 1234');
-      } else {
-        if (isSignIn) {
-          const existingUsers = JSON.parse(localStorage.getItem('anniyan_all_users') || '[]');
-          const user = existingUsers.find((u: any) => u.contact === contact.trim());
-          if (user) {
-            localStorage.setItem('anniyan_user', JSON.stringify(user));
-            onLogin(user);
-          } else {
-            setError('User not found. Please Sign Up.');
-          }
-        } else {
-          setStep('name');
-        }
-      }
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Step 3: Complete Registration ─────────────────────────────────────────
-  const handleNameSubmit = async (e: React.FormEvent) => {
+  // ─── SIGNUP STEP 2: Verify OTP ──────────────────────────────────────────────
+  const handleSignupVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
     setLoading(true);
     setError('');
-
     try {
-      const result = await apiPost('/auth/verify-code', {
-        contact: contact.trim(),
-        code,
-        mode: 'signup',
-        name: name.trim()
+      await apiPost('/auth/register-verify', { contact, code: otp });
+      setView('signup_finish');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── SIGNUP STEP 3: Complete ───────────────────────────────────────────────
+  const handleSignupComplete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const result = await apiPost('/auth/register-complete', {
+        contact,
+        name: fullName,
+        username,
+        password: signupPassword
       });
       localStorage.setItem('anniyan_user', JSON.stringify(result.user));
       onLogin(result.user);
-    } catch {
-      // Fallback: local registration
-      const user = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        contact: contact.trim(),
-        joinedAt: Date.now()
-      };
-      const existingUsers = JSON.parse(localStorage.getItem('anniyan_all_users') || '[]');
-      existingUsers.push(user);
-      localStorage.setItem('anniyan_all_users', JSON.stringify(existingUsers));
-      localStorage.setItem('anniyan_user', JSON.stringify(user));
-      onLogin(user);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className={`flex flex-col h-[100dvh] w-full relative transition-colors duration-500 overflow-hidden items-center justify-center ${isDark ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'}`}>
-      <div className="absolute inset-0 opacity-20 pointer-events-none">
-        <div className={`absolute -top-[20%] -left-[20%] w-[140%] h-[140%] animate-[spin_30s_linear_infinite] ${isDark ? 'bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-900/40 via-black to-black' : 'bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500/20 via-zinc-50 to-zinc-50'}`}></div>
-      </div>
+    <div className={`flex flex-col min-h-[100dvh] w-full items-center justify-center p-4 transition-colors duration-500 ${isDark ? 'bg-black' : 'bg-zinc-50'}`}>
+      
+      {/* Container Box */}
+      <div className={`w-full max-w-[350px] flex flex-col items-center border ${isDark ? 'bg-black border-zinc-800' : 'bg-white border-zinc-200'} py-10 px-8 rounded-sm`}>
+        
+        {/* Logo */}
+        <h1 className="text-4xl font-cinzel font-black uppercase tracking-tighter text-red-600 mb-8 italic">
+          Anniyan
+        </h1>
 
-      <div className={`relative z-10 w-full max-w-sm p-8 rounded-[2rem] border shadow-2xl backdrop-blur-xl ${isDark ? 'bg-zinc-950/80 border-red-900/30' : 'bg-white/80 border-zinc-200'}`}>
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto bg-red-600 rounded-2xl flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(220,38,38,0.5)]">
-            <i className="fas fa-fingerprint text-3xl text-white"></i>
-          </div>
-          <h1 className="text-2xl font-cinzel font-black uppercase tracking-widest text-red-600">
-            {step === 'verify' ? 'Verify Identity' : (isSignIn ? 'Sign In' : 'Sign Up')}
-          </h1>
-          <p className={`text-[10px] uppercase tracking-widest mt-2 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-            {step === 'contact' ? 'National Justice Dashboard' : step === 'verify' ? 'Enter Code Sent to Contact' : 'Finalize Profile'}
-          </p>
-        </div>
+        {error && <p className="text-xs text-red-500 text-center mb-4 font-semibold">{error}</p>}
 
-        {step === 'contact' && (
-          <div className="flex justify-center gap-4 mb-6">
-             <button onClick={() => { setIsSignIn(true); setError(''); }} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 transition-all ${isSignIn ? 'border-red-600 text-red-600' : 'border-transparent text-zinc-500'}`}>Sign In</button>
-             <button onClick={() => { setIsSignIn(false); setError(''); }} className={`text-xs font-black uppercase tracking-widest pb-1 border-b-2 transition-all ${!isSignIn ? 'border-red-600 text-red-600' : 'border-transparent text-zinc-500'}`}>Sign Up</button>
-          </div>
+        {/* ─── VIEW: LOGIN ───────────────────────────────────────────────────── */}
+        {view === 'login' && (
+          <form onSubmit={handleLogin} className="w-full space-y-2">
+            <input 
+              type="text" placeholder="Phone number, username, or email"
+              className={`w-full px-3 py-2 text-xs border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white focus:border-zinc-600' : 'bg-zinc-50 border-zinc-300 text-black focus:border-zinc-400'}`}
+              value={loginId} onChange={e => setLoginId(e.target.value)} required
+            />
+            <input 
+              type="password" placeholder="Password"
+              className={`w-full px-3 py-2 text-xs border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white focus:border-zinc-600' : 'bg-zinc-50 border-zinc-300 text-black focus:border-zinc-400'}`}
+              value={password} onChange={e => setPassword(e.target.value)} required
+            />
+            <button 
+              type="submit" disabled={loading}
+              className="w-full bg-red-600 text-white text-sm font-bold py-1.5 rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 mt-2"
+            >
+              {loading ? 'Logging in...' : 'Log In'}
+            </button>
+            <div className="flex items-center my-4">
+              <div className="flex-1 h-[1px] bg-zinc-800"></div>
+              <span className="mx-4 text-[10px] font-bold text-zinc-500 uppercase">OR</span>
+              <div className="flex-1 h-[1px] bg-zinc-800"></div>
+            </div>
+            <button type="button" className="text-xs text-zinc-400 font-semibold w-full">Forgot password?</button>
+          </form>
         )}
 
-        {error && <p className="text-xs text-red-500 text-center mb-4 font-bold">{error}</p>}
-
-        {step === 'contact' && (
-          <form onSubmit={handleContactSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className={`text-[0.6rem] font-black uppercase tracking-widest ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Gmail / Mobile Number</label>
-              <div className={`flex items-center border rounded-xl overflow-hidden ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
-                <div className="w-10 flex justify-center text-zinc-500"><i className="fas fa-envelope"></i></div>
-                <input 
-                  type="text" 
-                  value={contact}
-                  onChange={e => setContact(e.target.value)}
-                  placeholder="name@gmail.com or +91..."
-                  className="w-full bg-transparent py-3 pr-4 text-sm outline-none placeholder:text-zinc-600"
-                  required
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 bg-red-600 text-white font-black py-4 rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.3)] uppercase tracking-[0.2em] text-[0.7rem] disabled:opacity-50 flex items-center justify-center gap-2"
+        {/* ─── VIEW: SIGNUP START ────────────────────────────────────────────── */}
+        {view === 'signup_start' && (
+          <form onSubmit={handleSignupStart} className="w-full space-y-2 text-center">
+            <p className="text-sm font-bold text-zinc-400 mb-4">Sign up to see justice served.</p>
+            <input 
+              type="text" placeholder="Mobile Number or Email"
+              className={`w-full px-3 py-2 text-xs border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-300'}`}
+              value={contact} onChange={e => setContact(e.target.value)} required
+            />
+            <button 
+              type="submit" disabled={loading}
+              className="w-full bg-red-600 text-white text-sm font-bold py-1.5 rounded-md disabled:opacity-50 mt-2"
             >
-              {loading && <i className="fas fa-spinner fa-spin"></i>}
-              Send Code
+              Next
             </button>
           </form>
         )}
 
-        {step === 'verify' && (
-          <form onSubmit={handleVerifySubmit} className="space-y-4">
-            <div className="space-y-1 text-center">
-              <label className={`text-[0.6rem] font-black uppercase tracking-widest ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Enter 4-Digit Code</label>
-              <input 
-                type="text" 
-                value={code}
-                onChange={e => setCode(e.target.value)}
-                placeholder="1234"
-                className={`w-full text-center text-2xl font-mono tracking-[1em] py-4 rounded-xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'} outline-none`}
-                maxLength={4}
-                required
-              />
-              <p className="text-[10px] text-zinc-500 mt-2">Hint: Use 1234 for testing</p>
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-red-600 text-white font-black py-4 rounded-xl uppercase tracking-[0.2em] text-[0.7rem] disabled:opacity-50 flex items-center justify-center gap-2"
+        {/* ─── VIEW: SIGNUP VERIFY ───────────────────────────────────────────── */}
+        {view === 'signup_verify' && (
+          <form onSubmit={handleSignupVerify} className="w-full space-y-2 text-center">
+            <p className="text-xs font-bold text-zinc-400 mb-4">Enter the 6-digit code we sent to {contact}</p>
+            <input 
+              type="text" placeholder="######"
+              className={`w-full px-3 py-4 text-center text-xl font-mono tracking-widest border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-300'}`}
+              value={otp} onChange={e => setOtp(e.target.value)} maxLength={6} required
+            />
+            <button 
+              type="submit" disabled={loading}
+              className="w-full bg-red-600 text-white text-sm font-bold py-1.5 rounded-md disabled:opacity-50 mt-2"
             >
-              {loading && <i className="fas fa-spinner fa-spin"></i>}
               Verify
             </button>
+            <p className="text-[10px] text-zinc-500 mt-2">Check Render Logs for the code!</p>
           </form>
         )}
 
-        {step === 'name' && (
-          <form onSubmit={handleNameSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className={`text-[0.6rem] font-black uppercase tracking-widest ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Full Citizen Name</label>
-              <div className={`flex items-center border rounded-xl overflow-hidden ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
-                <div className="w-10 flex justify-center text-zinc-500"><i className="fas fa-user"></i></div>
-                <input 
-                  type="text" 
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Enter your name"
-                  className="w-full bg-transparent py-3 pr-4 text-sm outline-none"
-                  required
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-red-600 text-white font-black py-4 rounded-xl uppercase tracking-[0.2em] text-[0.7rem] disabled:opacity-50 flex items-center justify-center gap-2"
+        {/* ─── VIEW: SIGNUP FINISH ───────────────────────────────────────────── */}
+        {view === 'signup_finish' && (
+          <form onSubmit={handleSignupComplete} className="w-full space-y-2">
+            <input 
+              type="text" placeholder="Full Name"
+              className={`w-full px-3 py-2 text-xs border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-300'}`}
+              value={fullName} onChange={e => setFullName(e.target.value)} required
+            />
+            <input 
+              type="text" placeholder="Username"
+              className={`w-full px-3 py-2 text-xs border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-300'}`}
+              value={username} onChange={e => setUsername(e.target.value)} required
+            />
+            <input 
+              type="password" placeholder="Password"
+              className={`w-full px-3 py-2 text-xs border rounded-sm outline-none ${isDark ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-300'}`}
+              value={signupPassword} onChange={e => setSignupPassword(e.target.value)} required
+            />
+            <button 
+              type="submit" disabled={loading}
+              className="w-full bg-red-600 text-white text-sm font-bold py-1.5 rounded-md disabled:opacity-50 mt-2"
             >
-              {loading && <i className="fas fa-spinner fa-spin"></i>}
-              Complete Profile
+              Sign up
             </button>
           </form>
         )}
       </div>
 
-      <div className="absolute bottom-8 text-center w-full">
-        <p className={`text-[10px] font-cinzel font-black tracking-widest uppercase opacity-30 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Anniyan Justice System</p>
+      {/* Toggle Box */}
+      <div className={`w-full max-w-[350px] mt-4 border py-6 text-center ${isDark ? 'bg-black border-zinc-800 text-white' : 'bg-white border-zinc-200 text-black'}`}>
+        <p className="text-sm">
+          {view === 'login' ? (
+            <>Don't have an account? <button onClick={() => setView('signup_start')} className="text-red-600 font-bold">Sign up</button></>
+          ) : (
+            <>Have an account? <button onClick={() => setView('login')} className="text-red-600 font-bold">Log in</button></>
+          )}
+        </p>
+      </div>
+
+      {/* App Promo */}
+      <div className="mt-4 text-center">
+        <p className="text-xs text-zinc-500">Get the Anniyan Justice System app.</p>
+        <div className="flex gap-2 mt-4 opacity-50 grayscale hover:grayscale-0 transition-all cursor-pointer">
+           <div className="h-10 w-32 bg-zinc-900 border border-zinc-800 rounded-md flex items-center justify-center text-[10px] text-white">App Store</div>
+           <div className="h-10 w-32 bg-zinc-900 border border-zinc-800 rounded-md flex items-center justify-center text-[10px] text-white">Google Play</div>
+        </div>
       </div>
     </div>
   );
