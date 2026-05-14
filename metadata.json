@@ -1,0 +1,9 @@
+{
+  "name": "Anniyan – Justice Guide",
+  "description": "A reform-oriented ethical awareness application inspired by the three personas of Anniyan: Ambi's empathy, Anniyan's strict moral judgment, and Remo's reformative guidance.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
