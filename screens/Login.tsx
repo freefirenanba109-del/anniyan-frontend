@@ -178,7 +178,11 @@ const Login: React.FC<LoginProps> = ({ theme, onLogin }) => {
             >
               Verify
             </button>
-            <p className="text-[10px] text-zinc-500 mt-2">Check Render Logs for the code!</p>
+            <div className="mt-6 p-3 bg-zinc-900/50 border border-zinc-800 rounded-sm">
+              <p className="text-[9px] text-zinc-500 leading-relaxed uppercase tracking-widest">
+                Note: If email delivery is delayed, contact the system administrator for your 6-digit access code.
+              </p>
+            </div>
           </form>
         )}
 
